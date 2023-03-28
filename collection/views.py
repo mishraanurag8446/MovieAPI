@@ -1,36 +1,14 @@
 import os
-
 import requests
 from rest_framework import status
-from rest_framework_simplejwt.authentication import JWTAuthentication
-from rest_framework.decorators import api_view
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from .models import Collection, Movie
 from .models import RequestCounter
-from .serializers import CollectionSerializer
-
-
-# from .serializers import RegistrationSerializer, CollectionSerializer
-# class RegisterView(generics.CreateAPIView):
-#     queryset = User.objects.all()
-#     serializer_class = RegistrationSerializer
-#
-#     def post(self, request, *args, **kwargs):
-#         serializer = self.get_serializer(data=request.data)
-#         serializer.is_valid(raise_exception=True)
-#         user = serializer.save()
-#         refresh = RefreshToken.for_user(user)
-#
-#         response = {
-#             "refresh": str(refresh),
-#             "access": str(refresh.access_token)
-#         }
-#
-#         return Response(response, status=status.HTTP_201_CREATED)
-#
+from .serializers import CollectionSerializer, MovieSerializer
 
 
 class RequestCountView(APIView):
@@ -50,33 +28,10 @@ class RequestCountView(APIView):
             request_counter = RequestCounter.objects.get(id=1)
             request_counter.count = 0
             request_counter.save()
-            return Response({'success': True})
+            return Response({'message': 'Request counter reset successfully'})
         except RequestCounter.DoesNotExist:
-            return Response({'success': False, 'message': 'Request counter not found'},
+            return Response({'message': False, 'message': 'failed to reset count'},
                             status=status.HTTP_404_NOT_FOUND)
-
-
-@api_view(['GET'])
-def movies(request):
-    username = os.getenv('USERNAME1')
-    password = os.getenv('PASSWORD')
-    url = 'https://demo.credy.in/api/v1/maya/movies/'
-
-    # Create a session
-    session = requests.Session()
-
-    # Set the authentication credentials for the session
-    session.auth = (username, password)
-
-    # Make a request to the API
-    response = session.get(url)
-
-    # Check the response status code
-    if response.status_code == 200:
-        # Request was successful
-        movie = response.json()
-        return Response(movie)
-    # return Response(response.error)
 
 
 class CollectionView(APIView):
@@ -90,105 +45,86 @@ class CollectionView(APIView):
         return Response(data.data)
 
     def post(self, request):
-        title = request.data.get('title')
-        description = request.data.get('description')
-        movie_list = request.data.get('movies')
-        collection = Collection(title=title, description=description)
-        collection.save()
-        for movie in movie_list:
-            title = movie.get('title')
-            description = movie.get('description')
-            genres = movie.get('genres')
-            movie = Movie(title=title, description=description, genres=genres)
-            movie.save()
-        data = {'collection_uuid': collection.collection_uuid}
-        return Response(data)
+        serializer = CollectionSerializer(data=request.data)
+        if serializer.is_valid():
+            # Create a new Collection object
+            collection = Collection.objects.create(
+                title=serializer.validated_data['title'],
+                description=serializer.validated_data['description']
+            )
+            # Add movies to the collection
+            print(serializer.validated_data)
+            for movie_data in serializer.validated_data['movies']:
+                movie, created = Movie.objects.get_or_create(
+                    title=movie_data['title'],
+                    description=movie_data['description'],
+                    genres=movie_data['genres'],
+                    # uuid=movie_data['uuid']
+                )
+                collection.movies.add(movie)
+
+            # Serialize the Collection object and return it in the response
+            response_data = {
+                'collection_uuid': str(collection.collection_uuid)
+            }
+            return Response(response_data, status=status.HTTP_201_CREATED)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def put(self, request, collection_id):
-        data = request.data
+
         collection = Collection.objects.get(collection_uuid=collection_id)
-        collection.title = request.data.get('title')
-        collection.description = request.data.get('description')
-        collection.save()
-        print(request.data.get('movies'))
-        for movie in request.data.get('movies'):
-            title = movie.get('title')
-            description = movie.get('description')
-            genres = movie.get('genres')
-            movie = Movie(title=title, description=description, genres=genres)
-            movie.save()
-            # collection.movies.add(movie)
-        data = {'collection_uuid': collection.collection_uuid}
-        return Response(data)
+        serializer = CollectionSerializer(collection, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, collection_id):
-        collection = Collection.objects.get(collection_uuid=collection_id)
-        collection.delete()
-        return Response()
+        try:
+            collection = Collection.objects.get(collection_uuid=collection_id)
+            collection.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        except Collection.DoesNotExist:
+            # If the collection doesn't exist, return a 404 response
+            return Response({'message': f'Collection with ID {collection_id} does not exist'},
+                            status=status.HTTP_404_NOT_FOUND)
 
 
-#
-# @api_view(['GET', 'POST'])
-# def movie(request):
-#     if request.method == 'POST':
-#         title = request.data.get('title')
-#         description = request.data.get('description')
-#         genres = request.data.get('genres')
-#         print(request.data)
-#         print(title, genres, description)
-#         movie = Movie(title=title, description=description, genres=genres)
-#         movie.save()
-#         # movie_data = MovieSerializer(movie)
-#         return Response({'UUID': movie.uuid})
-#     if request.method == 'GET':
-#         movie_list = Movie.objects.all()
-#         # print(movie_list)
-#         serialize_movie = MovieSerializer(movies, many=True)
-#         # print(serialize_movie)
-#         return Response(serialize_movie.data)
+class MovieListView(APIView):
+    # pagination_class = PageNumberPagination
+    # page_size = 5
 
+    def get(self, request):
+        username = os.getenv('USERNAME1')
+        password = os.getenv('PASSWORD')
+        url = 'https://demo.credy.in/api/v1/maya/movies/'
 
-@api_view(['GET', 'POST', 'PUT', 'DELETE'])
-def movie_collection(request, collection_id=None):
-    data = None
-    if request.method == 'GET':
-        collection_data = Collection.objects.all()
-        data = CollectionSerializer(collection_data, many=True)
-        return Response(data.data)
-    elif request.method == 'POST':
-        title = request.data.get('title')
-        description = request.data.get('description')
-        movie_list = request.data.get('movies')
-        collection = Collection(title=title, description=description)
-        collection.save()
-        for movie in movie_list:
-            title = movie.get('title')
-            description = movie.get('description')
-            genres = movie.get('genres')
-            movie = Movie(title=title, description=description, genres=genres)
-            movie.save()
-        data = {'collection_uuid': collection.collection_uuid}
-        return Response(data)
-    elif request.method == 'PUT':
-        data = request.data
-        collection = Collection.objects.get(collection_uuid=collection_id)
-        collection.title = request.data.get('title')
-        collection.description = request.data.get('description')
-        for movie in request.data.get('movies'):
-            title = movie.get('title')
-            description = movie.get('description')
-            genres = movie.get('genres')
-            movie = Movie(title=title, description=description, genres=genres)
-            movie.save()
-            collection.movies.add(movie)
-    elif request.method == 'DELETE':
-        collection = Collection.objects.get(collection_uuid=collection_id)
-        collection.delete()
-        return Response()
-    return Response(data.error)
+        try:
+            # Create a session
+            session = requests.Session()
+            session.auth = (username, password)
+            response = session.get(url)
+            if response.status_code == 200:
+                movies = response.json()
 
+                # Paginate the movies
+                paginator = self.pagination_class()
+                paginated_movies = paginator.paginate_queryset(movies, request)
 
-@api_view(['GET'])
-def reset_count(request):
-    response = {'message': 'request count reset successfully'}
-    return Response(response)
+                # Serialize the paginated movies
+                serializer = MovieSerializer(paginated_movies, many=True)
+
+                # Return the paginated response
+                return paginator.get_paginated_response(serializer.data)
+            else:
+                # Request failed, return error message
+                return Response({'message': 'Unable to retrieve movies'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except requests.exceptions.ConnectionError as e:
+            # Handles connection errors
+            return Response({'message': f'Connection Error: {e}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except requests.exceptions.Timeout as e:
+            # Handles timeout errors
+            return Response({'message': f'Timeout Error: {e}'}, status=status.HTTP_408_REQUEST_TIMEOUT)
