@@ -1,20 +1,19 @@
 import os
 
-from django.contrib.auth.models import User
-from rest_framework.decorators import api_view
 import requests
+from rest_framework import status
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.decorators import api_view
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.views import APIView
-from rest_framework import generics, status
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.views import APIView
+
 from .models import Collection, Movie
+from .models import RequestCounter
 from .serializers import CollectionSerializer
 
 
 # from .serializers import RegistrationSerializer, CollectionSerializer
-
-
 # class RegisterView(generics.CreateAPIView):
 #     queryset = User.objects.all()
 #     serializer_class = RegistrationSerializer
@@ -33,11 +32,32 @@ from .serializers import CollectionSerializer
 #         return Response(response, status=status.HTTP_201_CREATED)
 #
 
+
+class RequestCountView(APIView):
+
+    def get(self, request):
+        # Create a new request counter instance
+        request_counter = RequestCounter.objects.get(id=1)
+        # Return the new request counter ID and count as a JSON response
+        response_data = {
+            'count': request_counter.count,
+        }
+        return Response(response_data, status=status.HTTP_201_CREATED)
+
+    def post(self, request):
+        # Delete the request counter instance with the given ID
+        try:
+            request_counter = RequestCounter.objects.get(id=1)
+            request_counter.count = 0
+            request_counter.save()
+            return Response({'success': True})
+        except RequestCounter.DoesNotExist:
+            return Response({'success': False, 'message': 'Request counter not found'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+
 @api_view(['GET'])
 def movies(request):
-    # username = 'iNd3jDMYRKsN1pjQPMRz2nrq7N99q4Tsp9EY9cM0'
-    # password = 'Ne5DoTQt7p8qrgkPdtenTK8zd6MorcCR5vXZIJNfJwvfafZfcOs4reyasVYddTyXCz9hcL5FGGIVxw3q02ibnBLhblivqQTp4BIC93LZHj4OppuHQUzwugcYu7TIC5H1'
-
     username = os.getenv('USERNAME1')
     password = os.getenv('PASSWORD')
     url = 'https://demo.credy.in/api/v1/maya/movies/'
@@ -60,7 +80,9 @@ def movies(request):
 
 
 class CollectionView(APIView):
-    # permission_classes = (IsAuthenticated,)
+    # authentication_classes = [SessionAuthentication, TokenAuthentication]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         collection_data = Collection.objects.all()
@@ -103,12 +125,6 @@ class CollectionView(APIView):
         collection = Collection.objects.get(collection_uuid=collection_id)
         collection.delete()
         return Response()
-
-
-@api_view(['GET'])
-def total_requests(request):
-    response_data = {'total_requests': request.META.get('X-Total-Requests', 'unknown')}
-    return Response(response_data)
 
 
 #
