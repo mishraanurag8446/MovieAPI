@@ -93,11 +93,11 @@ class CollectionView(APIView):
 
 
 class MovieListView(APIView):
-    # pagination_class = PageNumberPagination
-    # page_size = 5
+    pagination_class = PageNumberPagination
+    page_size = 5
 
     def get(self, request):
-        username = os.getenv('USERNAME1')
+        username = os.getenv('USERNAME')
         password = os.getenv('PASSWORD')
         url = 'https://demo.credy.in/api/v1/maya/movies/'
 
@@ -106,21 +106,9 @@ class MovieListView(APIView):
             session = requests.Session()
             session.auth = (username, password)
             response = session.get(url)
-            if response.status_code == 200:
-                movies = response.json()
 
-                # Paginate the movies
-                paginator = self.pagination_class()
-                paginated_movies = paginator.paginate_queryset(movies, request)
-
-                # Serialize the paginated movies
-                serializer = MovieSerializer(paginated_movies, many=True)
-
-                # Return the paginated response
-                return paginator.get_paginated_response(serializer.data)
-            else:
-                # Request failed, return error message
-                return Response({'message': 'Unable to retrieve movies'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            movies = response.json()
+            return Response(movies)
         except requests.exceptions.ConnectionError as e:
             # Handles connection errors
             return Response({'message': f'Connection Error: {e}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
